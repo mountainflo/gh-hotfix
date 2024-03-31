@@ -167,12 +167,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	prBody := createPullRequestBody(matchingCommits)
+
 	// open PR for hotfix and add a nice summary of the included PRs
 	pr, _, err := client.PullRequests.Create(ctx, owner, repo, &github.NewPullRequest{
 		Title: github.String(fmt.Sprintf("Hotfix %v", hotfixName)),
 		Head:  github.String(hotfixName),
 		Base:  github.String(releaseBranch),
-		Body:  github.String("BODY"),
+		Body:  github.String(prBody),
 	})
 	if err != nil {
 		fmt.Printf("Error creating pull request: %v\n", err)
@@ -180,6 +182,17 @@ func main() {
 	}
 
 	fmt.Printf("Successfully create PR: %s\n", pr.GetHTMLURL())
+}
+
+func createPullRequestBody(matchingCommits []commitMatch) string {
+	body := "Pull Request | commit main branch | commit pr \n" +
+		"------------ | ------------- | ------------- \n"
+
+	for _, commit := range matchingCommits {
+		body = body + commit.pr.GetHTMLURL() + " | " + commit.mainCommit.commit.GetHTMLURL() + " | " + commit.prCommit.commit.GetHTMLURL() + " \n"
+	}
+
+	return body
 }
 
 func checkoutHotfixBranch(err error, releaseBranch, hotfixName string) error {
