@@ -141,21 +141,73 @@ func main() {
 		fmt.Printf("mainCommitSHA: %v; prCommitSHA: %v\n", commit.mainCommit.commit.GetSHA(), commit.prCommit.commit.GetSHA())
 	}
 
-	// TODO create or checkout hotfix branch based on the release branch
-	/*_, _, err := client.Git.CreateRef(ctx, "<owner>", "<repo>", &github.Reference{
-		Ref:    github.String("refs/heads/" + hotfixName),
-		Object: &github.GitObject{SHA: github.String("<sha-of-base-branch>")},
+	// checkout hotfix branch based on the release branch
+	err = checkoutHotfixBranch(err, releaseBranch, hotfixName)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
+	// cherry pick commits to hotfix branch
+	for _, c := range matchingCommits {
+		commitSHA := c.mainCommit.commit.GetSHA()
+		gitCherryPick := exec.Command("git", "cherry-pick", commitSHA)
+		_, err = gitCherryPick.Output()
+		if err != nil {
+			fmt.Printf("Error during 'git cherry-pick %v': %s", commitSHA, err)
+			os.Exit(1)
+		}
+	}
+
+	// push hotfix branch
+	gitPushHotfix := exec.Command("git", "push", hotfixName)
+	_, err = gitPushHotfix.Output()
+	if err != nil {
+		fmt.Printf("error during 'git push %s': %v", hotfixName, err)
+		os.Exit(1)
+	}
+
+	// open PR for hotfix and add a nice summary of the included PRs
+	pr, _, err := client.PullRequests.Create(ctx, owner, repo, &github.NewPullRequest{
+		Title: github.String(fmt.Sprintf("Hotfix %v", hotfixName)),
+		Head:  github.String(hotfixName),
+		Base:  github.String(releaseBranch),
+		Body:  github.String("BODY"),
 	})
 	if err != nil {
-		fmt.Printf("Failed to create hotfix branch: %v\n", err)
-		os.Exit(1)
-	}*/
+		fmt.Printf("Error creating pull request: %v\n", err)
+		return
+	}
 
-	// TODO cherry pick commits to hotfix branch
+	fmt.Printf("Successfully create PR: %s\n", pr.GetHTMLURL())
+}
 
-	// TODO push hotfix branch
+func checkoutHotfixBranch(err error, releaseBranch, hotfixName string) error {
+	gitFetch := exec.Command("git", "fetch")
+	_, err = gitFetch.Output()
+	if err != nil {
+		return fmt.Errorf("error during 'git fetch': %v", err)
+	}
 
-	// TODO open PR for hotfix and add a nice summary of the included PRs
+	gitCheckoutRelease := exec.Command("git", "checkout", releaseBranch)
+	_, err = gitCheckoutRelease.Output()
+	if err != nil {
+		return fmt.Errorf("error during 'git checkout': %v", err)
+	}
+
+	gitPull := exec.Command("git", "pull", releaseBranch)
+	_, err = gitPull.Output()
+	if err != nil {
+		return fmt.Errorf("error during 'git pull': %v", err)
+	}
+
+	gitCheckoutHotfix := exec.Command("git", "checkout", "-b", hotfixName)
+	_, err = gitCheckoutHotfix.Output()
+	if err != nil {
+		return fmt.Errorf("error during 'git checkout -b %s': %v", hotfixName, err)
+	}
+
+	return nil
 }
 
 func matchCommits(mainBranchCommits []*github.RepositoryCommit, unmatchedPrCommits map[uint32]commitMatch) ([]commitMatch, error) {
