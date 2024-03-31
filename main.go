@@ -154,16 +154,16 @@ func main() {
 		gitCherryPick := exec.Command("git", "cherry-pick", commitSHA)
 		_, err = gitCherryPick.Output()
 		if err != nil {
-			fmt.Printf("Error during 'git cherry-pick %v': %s", commitSHA, err)
+			fmt.Printf("Error during 'git cherry-pick %v': %s\n", commitSHA, err)
 			os.Exit(1)
 		}
 	}
 
 	// push hotfix branch
-	gitPushHotfix := exec.Command("git", "push", hotfixName)
+	gitPushHotfix := exec.Command("git", "push", "origin", hotfixName)
 	_, err = gitPushHotfix.Output()
 	if err != nil {
-		fmt.Printf("error during 'git push %s': %v", hotfixName, err)
+		fmt.Printf("error during 'git push %s': %v\n", hotfixName, err)
 		os.Exit(1)
 	}
 
