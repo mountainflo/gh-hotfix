@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"hash/fnv"
@@ -18,7 +19,6 @@ import (
 
 const (
 	owner = "mountainflo"
-	repo  = "gh-hotfix" // TODO get this info from current repo
 )
 
 type commitMatch struct {
@@ -32,6 +32,7 @@ type wrappedCommit struct {
 }
 
 // hash creates a hash value to easily identify a commit
+// The hash value is based on the commit msg and its creation date.
 // Commit SHAs can't be used as they change after rebase&merge of the PR is done
 func (c wrappedCommit) hash() uint32 {
 	v := c.commit.GetCommit()
@@ -46,15 +47,6 @@ func (c wrappedCommit) hash() uint32 {
 		fmt.Sprintf("WARN: no commitAuthor field. hash will only be generated from commit msg")
 	}
 	return h.Sum32()
-}
-
-func (c wrappedCommit) equal(other wrappedCommit) bool {
-	a := c.commit.GetCommit()
-	b := other.commit.GetCommit()
-	return a.GetMessage() == b.GetMessage() &&
-		a.GetStats().GetDeletions() == b.GetStats().GetDeletions() &&
-		a.GetStats().GetAdditions() == b.GetStats().GetAdditions() &&
-		a.GetStats().GetTotal() == b.GetStats().GetTotal()
 }
 
 func main() {
@@ -99,13 +91,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	repo, err := getActiveRepoName()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Repository: %s\n", repo)
 	fmt.Printf("Creating hotfix %s based on %s.\n", hotfixName, releaseBranch)
 	fmt.Printf("Cherry-Picking commits of PRs '%s' from branch '%s'\n", pullRequests, mainBranch)
 
 	ctx := context.Background()
 	client := createGitHubClient(token, ctx)
 
-	prs, err := getMergedPullRequests(pullRequests, client, ctx)
+	prs, err := getMergedPullRequests(pullRequests, client, ctx, repo)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -115,7 +114,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	unmatchedPrCommits, err := collectCommitsFromPRs(prs, client, ctx)
+	unmatchedPrCommits, err := collectCommitsFromPRs(prs, client, ctx, repo)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
@@ -148,7 +147,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// cherry pick commits to hotfix branch
+	// cherry-pick commits to hotfix branch
 	for _, c := range matchingCommits {
 		commitSHA := c.mainCommit.commit.GetSHA()
 		gitCherryPick := exec.Command("git", "cherry-pick", commitSHA)
@@ -181,9 +180,10 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Successfully create PR: %s\n", pr.GetHTMLURL())
+	fmt.Printf("Successfully created PR: %s\n", pr.GetHTMLURL())
 }
 
+// createPullRequestBody creates markdown table for the PR body
 func createPullRequestBody(matchingCommits []commitMatch) string {
 	body := "Pull Request | commit main branch | commit pr \n" +
 		"------------ | ------------- | ------------- \n"
@@ -195,6 +195,7 @@ func createPullRequestBody(matchingCommits []commitMatch) string {
 	return body
 }
 
+// checkoutHotfixBranch checks out a new hotfix branch based on an existing release branch
 func checkoutHotfixBranch(err error, releaseBranch, hotfixName string) error {
 	gitFetch := exec.Command("git", "fetch")
 	_, err = gitFetch.Output()
@@ -223,6 +224,8 @@ func checkoutHotfixBranch(err error, releaseBranch, hotfixName string) error {
 	return nil
 }
 
+// matchCommits matches commits from main branch with commits from the PRs
+// Two commit match if their hash value is equal.
 func matchCommits(mainBranchCommits []*github.RepositoryCommit, unmatchedPrCommits map[uint32]commitMatch) ([]commitMatch, error) {
 	var matchingCommits []commitMatch
 	for _, commit := range mainBranchCommits {
@@ -245,7 +248,8 @@ func matchCommits(mainBranchCommits []*github.RepositoryCommit, unmatchedPrCommi
 	return matchingCommits, nil
 }
 
-func collectCommitsFromPRs(prs []*github.PullRequest, client *github.Client, ctx context.Context) (map[uint32]commitMatch, error) {
+// collectCommitsFromPRs fetches for each PR all its commits
+func collectCommitsFromPRs(prs []*github.PullRequest, client *github.Client, ctx context.Context, repo string) (map[uint32]commitMatch, error) {
 	hashToCommitMatch := make(map[uint32]commitMatch)
 	for _, pr := range prs {
 		commits, _, err := client.PullRequests.ListCommits(ctx, owner, repo, *pr.Number, nil)
@@ -270,7 +274,8 @@ func createGitHubClient(token string, ctx context.Context) *github.Client {
 	return client
 }
 
-func getMergedPullRequests(pullRequests string, client *github.Client, ctx context.Context) ([]*github.PullRequest, error) {
+// getMergedPullRequests returns for a comma separated string of PRs all merged PRs
+func getMergedPullRequests(pullRequests string, client *github.Client, ctx context.Context, repo string) ([]*github.PullRequest, error) {
 	var prs []*github.PullRequest
 	for _, prNum := range strings.Split(strings.ReplaceAll(pullRequests, "#", ""), ",") {
 		prInt, _ := strconv.Atoi(prNum)
@@ -293,6 +298,7 @@ func sortPRsByMergeDateAsc(prs []*github.PullRequest) {
 	})
 }
 
+// getOldestPRCreationDate returns date of the PR which was created before all other PRs
 func getOldestPRCreationDate(prs []*github.PullRequest) time.Time {
 	oldest := time.Now()
 	for _, pr := range prs {
@@ -304,6 +310,7 @@ func getOldestPRCreationDate(prs []*github.PullRequest) time.Time {
 	return oldest
 }
 
+// getGitHubToken returns value of GITHUB_TOKEN environment variable
 func getGitHubToken() string {
 	token := os.Getenv("GITHUB_TOKEN")
 	if token != "" {
@@ -318,7 +325,25 @@ func getGitHubToken() string {
 		os.Exit(1)
 	}
 
-	token = strings.TrimSuffix(string(output), "\n")
+	return strings.TrimSuffix(string(output), "\n")
+}
 
-	return token
+// getActiveRepoName returns name of the active git repository
+// gh repo view --json name -q ".name"
+func getActiveRepoName() (string, error) {
+	type repoView struct {
+		Name string `json:"name"`
+	}
+	cmd := exec.Command("gh", "repo", "view", "--json", "name")
+	ghRepoJson, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("error executing 'gh repo view --json name: %v", err)
+	}
+
+	var repo repoView
+	if err := json.Unmarshal(ghRepoJson, &repo); err != nil {
+		return "", fmt.Errorf("can not unmarshal JSON: %v", err)
+	}
+
+	return repo.Name, nil
 }
