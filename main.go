@@ -195,7 +195,7 @@ func checkoutHotfixBranch(err error, releaseBranch, hotfixName string) error {
 		return fmt.Errorf("error during 'git checkout': %v", err)
 	}
 
-	gitPull := exec.Command("git", "pull", releaseBranch)
+	gitPull := exec.Command("git", "pull")
 	_, err = gitPull.Output()
 	if err != nil {
 		return fmt.Errorf("error during 'git pull': %v", err)
