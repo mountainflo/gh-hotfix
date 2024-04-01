@@ -9,12 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/go-github/v37/github"
-	"golang.org/x/oauth2"
 )
 
 type commitMatch struct {
@@ -98,9 +96,9 @@ func main() {
 	fmt.Printf("Cherry-Picking commits of PRs '%s' from branch '%s'\n", pullRequests, mainBranch)
 
 	ctx := context.Background()
-	client := createGitHubClient(token, ctx)
+	client := newGitHubApiClient(repoInfo.Name, repoInfo.Owner.Login, token, ctx)
 
-	prs, err := getMergedPullRequests(pullRequests, client, ctx, repoInfo)
+	prs, err := client.getMergedPullRequests(pullRequests)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -110,17 +108,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	unmatchedPrCommits, err := collectCommitsFromPRs(prs, client, ctx, repoInfo)
+	unmatchedPrCommits, err := client.collectCommitsFromPRs(prs)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
 	// fetch commits from main branch
-	mainBranchCommits, _, err := client.Repositories.ListCommits(ctx, repoInfo.Owner.Login, repoInfo.Name, &github.CommitsListOptions{
-		SHA:   mainBranch,
-		Since: getOldestPRCreationDate(prs),
-	})
+	mainBranchCommits, err := client.fetchCommits(mainBranch, getOldestPRCreationDate(prs))
 	if err != nil {
 		fmt.Printf("Failed to list commits: %v\n", err)
 		os.Exit(1)
@@ -165,15 +160,15 @@ func main() {
 	prBody := createPullRequestBody(matchingCommits)
 
 	// open PR for hotfix and add a nice summary of the included PRs
-	pr, _, err := client.PullRequests.Create(ctx, repoInfo.Owner.Login, repoInfo.Name, &github.NewPullRequest{
+	pr, err := client.openPullRequest(&github.NewPullRequest{
 		Title: github.String(fmt.Sprintf("Hotfix %v", hotfixName)),
 		Head:  github.String(hotfixName),
 		Base:  github.String(releaseBranch),
 		Body:  github.String(prBody),
 	})
 	if err != nil {
-		fmt.Printf("Error creating pull request: %v\n", err)
-		return
+		fmt.Printf("error creating pull request: %v\n", err)
+		os.Exit(1)
 	}
 
 	fmt.Printf("Successfully created PR: %s\n", pr.GetHTMLURL())
@@ -244,50 +239,6 @@ func matchCommits(mainBranchCommits []*github.RepositoryCommit, unmatchedPrCommi
 	return matchingCommits, nil
 }
 
-// collectCommitsFromPRs fetches for each PR all its commits
-func collectCommitsFromPRs(prs []*github.PullRequest, client *github.Client, ctx context.Context, repoInfo *repoView) (map[uint32]commitMatch, error) {
-	hashToCommitMatch := make(map[uint32]commitMatch)
-	for _, pr := range prs {
-		commits, _, err := client.PullRequests.ListCommits(ctx, repoInfo.Owner.Login, repoInfo.Name, *pr.Number, nil)
-		if err != nil {
-			return nil, fmt.Errorf("can't retrieve commits for PR %s: %v", *pr.Number, err)
-		}
-		for _, c := range commits {
-			wc := wrappedCommit{commit: c}
-			hashToCommitMatch[wc.hash()] = commitMatch{
-				prCommit: wc,
-				pr:       pr,
-			}
-		}
-	}
-	return hashToCommitMatch, nil
-}
-
-func createGitHubClient(token string, ctx context.Context) *github.Client {
-	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-	tc := oauth2.NewClient(ctx, ts)
-	client := github.NewClient(tc)
-	return client
-}
-
-// getMergedPullRequests returns for a comma separated string of PRs all merged PRs
-func getMergedPullRequests(pullRequests string, client *github.Client, ctx context.Context, repoInfo *repoView) ([]*github.PullRequest, error) {
-	var prs []*github.PullRequest
-	for _, prNum := range strings.Split(strings.ReplaceAll(pullRequests, "#", ""), ",") {
-		prInt, _ := strconv.Atoi(prNum)
-		pr, _, err := client.PullRequests.Get(ctx, repoInfo.Owner.Login, repoInfo.Name, prInt)
-		if err != nil {
-			return nil, fmt.Errorf("error for fetching PR data from GitHub: %v", err)
-		}
-		if pr.GetMerged() {
-			prs = append(prs, pr)
-		} else {
-			fmt.Printf("Non-merged PR #%v can't be added to hotfix. PR has state: %v\n", *pr.Number, *pr.State)
-		}
-	}
-	return prs, nil
-}
-
 func sortPRsByMergeDateAsc(prs []*github.PullRequest) {
 	sort.Slice(prs, func(i, j int) bool {
 		return prs[i].MergedAt.After(*(prs[j].MergedAt))
@@ -333,7 +284,6 @@ type repoView struct {
 }
 
 // getActiveRepoInfo returns Name and Owner of the active git repository
-// gh repo view --json name,owner
 func getActiveRepoInfo() (*repoView, error) {
 	cmd := exec.Command("gh", "repo", "view", "--json", "name,owner")
 	ghRepoJson, err := cmd.Output()
