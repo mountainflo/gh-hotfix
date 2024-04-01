@@ -130,28 +130,23 @@ func main() {
 	}
 
 	// checkout hotfix branch based on the release branch
-	err = checkoutHotfixBranch(err, releaseBranch, hotfixName)
+	err = checkoutHotfixBranch(releaseBranch, hotfixName)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
 	// cherry-pick commits to hotfix branch
-	for _, c := range matchingCommits {
-		commitSHA := c.mainCommit.commit.GetSHA()
-		gitCherryPick := exec.Command("git", "cherry-pick", commitSHA)
-		_, err = gitCherryPick.Output()
-		if err != nil {
-			fmt.Printf("Error during 'git cherry-pick %v': %s\n", commitSHA, err)
-			os.Exit(1)
-		}
+	err = cherryPickMatchingCommits(matchingCommits)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
 	}
 
 	// push hotfix branch
-	gitPushHotfix := exec.Command("git", "push", "origin", hotfixName)
-	_, err = gitPushHotfix.Output()
+	err = pushBranch(hotfixName)
 	if err != nil {
-		fmt.Printf("error during 'git push %s': %v\n", hotfixName, err)
+		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
@@ -210,29 +205,25 @@ func createPullRequestBody(matchingCommits []commitMatch) string {
 }
 
 // checkoutHotfixBranch checks out a new hotfix branch based on an existing release branch
-func checkoutHotfixBranch(err error, releaseBranch, hotfixName string) error {
-	gitFetch := exec.Command("git", "fetch")
-	_, err = gitFetch.Output()
+func checkoutHotfixBranch(releaseBranch, hotfixName string) error {
+	err := executeGitCmd("fetch")
 	if err != nil {
-		return fmt.Errorf("error during 'git fetch': %v", err)
+		return err
 	}
 
-	gitCheckoutRelease := exec.Command("git", "checkout", releaseBranch)
-	_, err = gitCheckoutRelease.Output()
+	err = executeGitCmd("checkout", releaseBranch)
 	if err != nil {
-		return fmt.Errorf("error during 'git checkout': %v", err)
+		return err
 	}
 
-	gitPull := exec.Command("git", "pull")
-	_, err = gitPull.Output()
+	err = executeGitCmd("pull")
 	if err != nil {
-		return fmt.Errorf("error during 'git pull': %v", err)
+		return err
 	}
 
-	gitCheckoutHotfix := exec.Command("git", "checkout", "-b", hotfixName)
-	_, err = gitCheckoutHotfix.Output()
+	err = executeGitCmd("checkout", "-b", hotfixName)
 	if err != nil {
-		return fmt.Errorf("error during 'git checkout -b %s': %v", hotfixName, err)
+		return err
 	}
 
 	return nil
