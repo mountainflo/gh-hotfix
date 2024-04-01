@@ -167,6 +167,27 @@ func main() {
 	fmt.Printf("Successfully created PR: %s\n", pr.GetHTMLURL())
 }
 
+// pushBranch pushes changes of branch to origin
+func pushBranch(branchName string) error {
+	err := executeGitCmd("push", "origin", branchName)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// cherryPickMatchingCommits cherry-picks matching commits from main branch to current branch
+func cherryPickMatchingCommits(matchingCommits []commitMatch) error {
+	for _, c := range matchingCommits {
+		commitSHA := c.mainCommit.commit.GetSHA()
+		err := executeGitCmd("cherry-pick", commitSHA)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // fillOutPullRequestFields fills out the necessary fields of a GitHub pull request
 func fillOutPullRequestFields(hotfixName string, releaseBranch string, prBody string) *github.NewPullRequest {
 	return &github.NewPullRequest{
