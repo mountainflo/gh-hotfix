@@ -2,14 +2,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"hash/fnv"
 	"os"
 	"os/exec"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/google/go-github/v37/github"
@@ -160,18 +158,23 @@ func main() {
 	prBody := createPullRequestBody(matchingCommits)
 
 	// open PR for hotfix and add a nice summary of the included PRs
-	pr, err := client.openPullRequest(&github.NewPullRequest{
-		Title: github.String(fmt.Sprintf("Hotfix %v", hotfixName)),
-		Head:  github.String(hotfixName),
-		Base:  github.String(releaseBranch),
-		Body:  github.String(prBody),
-	})
+	pr, err := client.openPullRequest(fillOutPullRequestFields(hotfixName, releaseBranch, prBody))
 	if err != nil {
 		fmt.Printf("error creating pull request: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Printf("Successfully created PR: %s\n", pr.GetHTMLURL())
+}
+
+// fillOutPullRequestFields fills out the necessary fields of a GitHub pull request
+func fillOutPullRequestFields(hotfixName string, releaseBranch string, prBody string) *github.NewPullRequest {
+	return &github.NewPullRequest{
+		Title: github.String(fmt.Sprintf("Hotfix %v", hotfixName)),
+		Head:  github.String(hotfixName),
+		Base:  github.String(releaseBranch),
+		Body:  github.String(prBody),
+	}
 }
 
 // createPullRequestBody creates markdown table for the PR body
@@ -182,7 +185,6 @@ func createPullRequestBody(matchingCommits []commitMatch) string {
 	for _, commit := range matchingCommits {
 		body = body + commit.pr.GetHTMLURL() + " | " + commit.mainCommit.commit.GetHTMLURL() + " | " + commit.prCommit.commit.GetHTMLURL() + " \n"
 	}
-
 	return body
 }
 
@@ -255,46 +257,4 @@ func getOldestPRCreationDate(prs []*github.PullRequest) time.Time {
 		}
 	}
 	return oldest
-}
-
-// getGitHubToken returns value of GITHUB_TOKEN environment variable
-func getGitHubToken() string {
-	token := os.Getenv("GITHUB_TOKEN")
-	if token != "" {
-		return token
-	}
-
-	// retrieve GITHUB_TOKEN using "gh config" command
-	cmd := exec.Command("gh", "config", "get", "oauth_token", "-h", "github.com")
-	output, err := cmd.Output()
-	if err != nil {
-		fmt.Println("Error retrieving GITHUB_TOKEN:", err)
-		os.Exit(1)
-	}
-
-	return strings.TrimSuffix(string(output), "\n")
-}
-
-type repoView struct {
-	Name  string `json:"name"`
-	Owner struct {
-		Id    string `json:"id"`
-		Login string `json:"login"`
-	} `json:"owner"`
-}
-
-// getActiveRepoInfo returns Name and Owner of the active git repository
-func getActiveRepoInfo() (*repoView, error) {
-	cmd := exec.Command("gh", "repo", "view", "--json", "name,owner")
-	ghRepoJson, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("error executing 'gh repo view --json name,owner: %v", err)
-	}
-
-	var repo *repoView
-	if err := json.Unmarshal(ghRepoJson, repo); err != nil {
-		return nil, fmt.Errorf("can not unmarshal JSON: %v", err)
-	}
-
-	return repo, nil
 }
