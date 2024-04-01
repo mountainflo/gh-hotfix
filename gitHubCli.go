@@ -28,10 +28,12 @@ func getGitHubToken() string {
 
 type repoView struct {
 	Name  string `json:"name"`
-	Owner struct {
-		Id    string `json:"id"`
-		Login string `json:"login"`
-	} `json:"owner"`
+	Owner owner  `json:"owner"`
+}
+
+type owner struct {
+	Id    string `json:"id"`
+	Login string `json:"login"`
 }
 
 // getActiveRepoInfo returns Name and Owner of the active git repository
@@ -43,7 +45,7 @@ func getActiveRepoInfo() (*repoView, error) {
 	}
 
 	var repo *repoView
-	if err := json.Unmarshal(ghRepoJson, repo); err != nil {
+	if err := json.Unmarshal(ghRepoJson, &repo); err != nil {
 		return nil, fmt.Errorf("can not unmarshal JSON: %v", err)
 	}
 

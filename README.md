@@ -27,9 +27,9 @@ gh extension upgrade mountainflo/gh-hotfix
 -mb string
    main branch where to cherry pick from (default "master")
 -prs string
-   comma-separated list of PRs, e.g: '#42,#164'
+   comma-separated list of PRs, e.g: '42,164'
 -pullRequests string
-   comma-separated list of PRs, e.g: '#42,#164'
+   comma-separated list of PRs, e.g: '42,164'
 -rb string
    release branch to add the hotfix to
 -releaseBranch string

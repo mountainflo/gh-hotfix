@@ -46,7 +46,7 @@ func main() {
 	mbUsage := "main branch where to cherry pick from"
 	rbUsage := "release branch to add the hotfix to"
 	hUsage := "name of the hotfix"
-	prsUsage := "comma-separated list of PRs, e.g: '#42,#164'"
+	prsUsage := "comma-separated list of PRs, e.g: '42,164'"
 
 	var mainBranch string
 	var releaseBranch string
@@ -61,7 +61,6 @@ func main() {
 	flag.StringVar(&hotfixName, "hf", "", hUsage)
 	flag.StringVar(&pullRequests, "pullRequests", "", prsUsage)
 	flag.StringVar(&pullRequests, "prs", "", prsUsage)
-	flag.StringVar(&pullRequests, "help", "", "help")
 	flag.Parse()
 
 	if releaseBranch == "" {
@@ -94,7 +93,7 @@ func main() {
 	fmt.Printf("Cherry-Picking commits of PRs '%s' from branch '%s'\n", pullRequests, mainBranch)
 
 	ctx := context.Background()
-	client := newGitHubApiClient(repoInfo.Name, repoInfo.Owner.Login, token, ctx)
+	client := newGitHubApiClient(repoInfo.Owner.Login, repoInfo.Name, token, ctx)
 
 	prs, err := client.getMergedPullRequests(pullRequests)
 	if err != nil {
@@ -256,7 +255,7 @@ func matchCommits(mainBranchCommits []*github.RepositoryCommit, unmatchedPrCommi
 
 	// verify unmatchedPrCommits is empty
 	if len(unmatchedPrCommits) != 0 {
-		return nil, fmt.Errorf("commits could be matched", unmatchedPrCommits)
+		return nil, fmt.Errorf("commits could not be matched: %v", unmatchedPrCommits)
 	}
 
 	return matchingCommits, nil

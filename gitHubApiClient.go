@@ -33,7 +33,7 @@ func newGitHubApiClient(repoOwner, repoName, token string, ctx context.Context) 
 // getMergedPullRequests returns for a comma separated string of PRs all merged PRs
 func (c *gitHubApiClient) getMergedPullRequests(pullRequests string) ([]*github.PullRequest, error) {
 	var prs []*github.PullRequest
-	for _, prNum := range strings.Split(strings.ReplaceAll(pullRequests, "#", ""), ",") {
+	for _, prNum := range strings.Split(pullRequests, ",") {
 		prInt, _ := strconv.Atoi(prNum)
 		pr, _, err := c.client.PullRequests.Get(c.ctx, c.repoOwner, c.repoName, prInt)
 		if err != nil {
@@ -54,7 +54,7 @@ func (c *gitHubApiClient) collectCommitsFromPRs(prs []*github.PullRequest) (map[
 	for _, pr := range prs {
 		commits, _, err := c.client.PullRequests.ListCommits(c.ctx, c.repoOwner, c.repoName, *pr.Number, nil)
 		if err != nil {
-			return nil, fmt.Errorf("can't retrieve commits for PR %s: %v", *pr.Number, err)
+			return nil, fmt.Errorf("can't retrieve commits for PR %d: %v", *pr.Number, err)
 		}
 		for _, c := range commits {
 			wc := wrappedCommit{commit: c}
