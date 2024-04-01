@@ -238,6 +238,15 @@ func checkoutHotfixBranch(err error, releaseBranch, hotfixName string) error {
 	return nil
 }
 
+func executeGitCmd(args ...string) error {
+	gitPull := exec.Command("git", args...)
+	_, err := gitPull.Output()
+	if err != nil {
+		return fmt.Errorf("error during 'git %v': %v", args, err)
+	}
+	return nil
+}
+
 // matchCommits matches commits from main branch with commits from the PRs
 // Two commit match if their hash value is equal.
 func matchCommits(mainBranchCommits []*github.RepositoryCommit, unmatchedPrCommits map[uint32]commitMatch) ([]commitMatch, error) {
