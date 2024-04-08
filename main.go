@@ -13,11 +13,44 @@ import (
 	"github.com/google/go-github/v37/github"
 )
 
+type hotfixPrs struct {
+	prs        []*wrappedPullRequest
+	allCommits map[uint32]*commitMatch
+}
+
+type wrappedPullRequest struct {
+	pr      *github.PullRequest
+	commits map[uint32]*commitMatch // TODO rename hashToCommits
+	head    *commitMatch
+	tail    *commitMatch
+}
+
 type commitMatch struct {
-	pr         *github.PullRequest
 	prCommit   wrappedCommit
 	mainCommit wrappedCommit
+	previous   *commitMatch
+	next       *commitMatch
 }
+
+/*type commitMatches []commitMatch
+
+func (m commitMatches) Len() int {
+	return len(m)
+}
+
+func (m commitMatches) Less(i, j int) bool {
+
+	if m[i].pr.Number == m[j].pr.Number {
+		// compare individual commits
+
+	}
+
+	return *(m[i].pr.Number) < *(m[j].pr.Number)
+}
+
+func (m commitMatches) Swap(i, j int) {
+	m[i], m[j] = m[j], m[i]
+}*/
 
 type wrappedCommit struct {
 	commit *github.RepositoryCommit
@@ -31,7 +64,7 @@ func (c wrappedCommit) hash() uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(v.GetMessage()))
 	if v.GetAuthor() != nil {
-		// For Author the date should be the same for the commit of the PR and the commit within main branch
+		// For Author the date should be the same for the commit of the PR and for the commit within main branch
 		// For Commiter the date will be different as rebase&merge created a commit
 		h.Write([]byte(fmt.Sprintf("%v", v.GetAuthor().GetDate())))
 	} else {
@@ -95,36 +128,44 @@ func main() {
 	ctx := context.Background()
 	client := newGitHubApiClient(repoInfo.Owner.Login, repoInfo.Name, token, ctx)
 
-	prs, err := client.getMergedPullRequests(pullRequests)
+	hotfixPrs, err := client.getMergedPullRequests(pullRequests)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	if len(prs) == 0 {
+	if len(hotfixPrs.prs) == 0 {
 		fmt.Println("Empty PR List")
 		os.Exit(1)
 	}
 
-	unmatchedPrCommits, err := client.collectCommitsFromPRs(prs)
+	err = client.collectCommitsFromPRs(hotfixPrs)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
 	// fetch commits from main branch
-	mainBranchCommits, err := client.fetchCommits(mainBranch, getOldestPRCreationDate(prs))
+	mainBranchCommits, err := client.fetchCommits(mainBranch, hotfixPrs.getOldestPRCreationDate())
 	if err != nil {
 		fmt.Printf("Failed to list commits: %v\n", err)
 		os.Exit(1)
 	}
 
-	matchingCommits, err := matchCommits(mainBranchCommits, unmatchedPrCommits)
+	err = matchCommits(mainBranchCommits, hotfixPrs.allCommits)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
-	for _, commit := range matchingCommits {
+	// TODO maybe move sorting of the commits into cherryPickMatchingCommits
+	// sort commits after order of the main branch to avoid merge-conflicts later
+	err = hotfixPrs.sortMatchingCommits()
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
+	for _, commit := range hotfixPrs.allCommits {
 		fmt.Printf("mainCommitSHA: %v; prCommitSHA: %v\n", commit.mainCommit.commit.GetSHA(), commit.prCommit.commit.GetSHA())
 	}
 
@@ -136,7 +177,7 @@ func main() {
 	}
 
 	// cherry-pick commits to hotfix branch
-	err = cherryPickMatchingCommits(matchingCommits)
+	err = cherryPickMatchingCommits(hotfixPrs)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
@@ -149,7 +190,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	prBody := createPullRequestBody(matchingCommits)
+	prBody := createPullRequestBody(hotfixPrs)
 
 	// open PR for hotfix and add a nice summary of the included PRs
 	pr, err := client.openPullRequest(fillOutPullRequestFields(hotfixName, releaseBranch, prBody))
@@ -159,6 +200,24 @@ func main() {
 	}
 
 	fmt.Printf("Successfully created PR: %s\n", pr.GetHTMLURL())
+}
+
+// sortMatchingCommits sorts commits after the order of the main branch
+func (hprs hotfixPrs) sortMatchingCommits() error {
+	// TODO sort commits by date and use the parent SHA to keep order if date is equal, e.g. in cases of force push
+	// sort matchingCommits by merged Date of the PRs
+	/*sort.Slice(matchingCommits, func(i, j int) bool {
+		iCreationDate := matchingCommits[i].mainCommit.commit.Commit.Committer.Date
+		jCreationDate := matchingCommits[j].mainCommit.commit.Commit.Committer.Date
+		return iCreationDate.Before(*jCreationDate)
+	})*/
+
+	// TODO sort by wrappedPullRequests by MergedDate
+	sort.Slice(hprs.prs, func(i, j int) bool {
+		return hprs.prs[i].pr.MergedAt.Before(*(hprs.prs[j].pr.MergedAt))
+	})
+
+	return nil
 }
 
 // pushBranch pushes changes of branch to origin
@@ -171,12 +230,16 @@ func pushBranch(branchName string) error {
 }
 
 // cherryPickMatchingCommits cherry-picks matching commits from main branch to current branch
-func cherryPickMatchingCommits(matchingCommits []commitMatch) error {
-	for _, c := range matchingCommits {
-		commitSHA := c.mainCommit.commit.GetSHA()
-		err := executeGitCmd("cherry-pick", commitSHA)
-		if err != nil {
-			return err
+func cherryPickMatchingCommits(hPrs *hotfixPrs) error {
+	for _, pr := range hPrs.prs {
+		cm := pr.head //TODO make sure to pick the oldest commit first and use previous/next
+		for cm != nil {
+			commitSHA := cm.mainCommit.commit.GetSHA()
+			err := executeGitCmd("cherry-pick", commitSHA)
+			if err != nil {
+				return err
+			}
+			cm = cm.next
 		}
 	}
 	return nil
@@ -193,12 +256,17 @@ func fillOutPullRequestFields(hotfixName string, releaseBranch string, prBody st
 }
 
 // createPullRequestBody creates markdown table for the PR body
-func createPullRequestBody(matchingCommits []commitMatch) string {
+func createPullRequestBody(hPrs *hotfixPrs) string {
 	body := "Pull Request | commit main branch | commit pr \n" +
 		"------------ | ------------- | ------------- \n"
 
-	for _, commit := range matchingCommits {
-		body = body + commit.pr.GetHTMLURL() + " | " + commit.mainCommit.commit.GetHTMLURL() + " | " + commit.prCommit.commit.GetHTMLURL() + " \n"
+	for _, wrappedPr := range hPrs.prs {
+		// TODO use next/previous here to keep the order
+		cm := wrappedPr.head
+		for cm != nil {
+			body = body + wrappedPr.pr.GetHTMLURL() + " | " + cm.mainCommit.commit.GetHTMLURL() + " | " + cm.prCommit.commit.GetHTMLURL() + " \n"
+			cm = cm.next
+		}
 	}
 	return body
 }
@@ -239,26 +307,26 @@ func executeGitCmd(args ...string) error {
 
 // matchCommits matches commits from main branch with commits from the PRs
 // Two commit match if their hash value is equal.
-func matchCommits(mainBranchCommits []*github.RepositoryCommit, unmatchedPrCommits map[uint32]commitMatch) ([]commitMatch, error) {
-	var matchingCommits []commitMatch
+func matchCommits(mainBranchCommits []*github.RepositoryCommit, allPrCommits map[uint32]*commitMatch) error {
+	var matchingCommits []*commitMatch
 	for _, commit := range mainBranchCommits {
 		wrappedMainBranchCommit := wrappedCommit{commit: commit}
 
-		commitMatch, ok := unmatchedPrCommits[wrappedMainBranchCommit.hash()]
+		commitMatch, ok := allPrCommits[wrappedMainBranchCommit.hash()]
 
 		if ok {
 			commitMatch.mainCommit = wrappedMainBranchCommit
 			matchingCommits = append(matchingCommits, commitMatch)
-			delete(unmatchedPrCommits, wrappedMainBranchCommit.hash())
 		}
 	}
 
-	// verify unmatchedPrCommits is empty
-	if len(unmatchedPrCommits) != 0 {
-		return nil, fmt.Errorf("commits could not be matched: %v", unmatchedPrCommits)
+	// verify all the pr commits have a corresponding main branch commit linked
+	if len(allPrCommits) != len(matchingCommits) {
+		// TODO print all commits that have no mainBranchCommit
+		return fmt.Errorf("some commits could not be matched")
 	}
 
-	return matchingCommits, nil
+	return nil
 }
 
 func sortPRsByMergeDateAsc(prs []*github.PullRequest) {
@@ -268,10 +336,10 @@ func sortPRsByMergeDateAsc(prs []*github.PullRequest) {
 }
 
 // getOldestPRCreationDate returns date of the PR which was created before all other PRs
-func getOldestPRCreationDate(prs []*github.PullRequest) time.Time {
+func (hprs *hotfixPrs) getOldestPRCreationDate() time.Time {
 	oldest := time.Now()
-	for _, pr := range prs {
-		prCreationDate := *(pr.CreatedAt)
+	for _, pr := range hprs.prs {
+		prCreationDate := *(pr.pr.CreatedAt)
 		if oldest.After(prCreationDate) { // TODO check if it works for different time zones, too
 			oldest = prCreationDate
 		}

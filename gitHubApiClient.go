@@ -31,8 +31,8 @@ func newGitHubApiClient(repoOwner, repoName, token string, ctx context.Context) 
 }
 
 // getMergedPullRequests returns for a comma separated string of PRs all merged PRs
-func (c *gitHubApiClient) getMergedPullRequests(pullRequests string) ([]*github.PullRequest, error) {
-	var prs []*github.PullRequest
+func (c *gitHubApiClient) getMergedPullRequests(pullRequests string) (*hotfixPrs, error) {
+	var hotfixPrs hotfixPrs
 	for _, prNum := range strings.Split(pullRequests, ",") {
 		prInt, _ := strconv.Atoi(prNum)
 		pr, _, err := c.client.PullRequests.Get(c.ctx, c.repoOwner, c.repoName, prInt)
@@ -40,31 +40,50 @@ func (c *gitHubApiClient) getMergedPullRequests(pullRequests string) ([]*github.
 			return nil, fmt.Errorf("error for fetching PR data from GitHub: %v", err)
 		}
 		if pr.GetMerged() {
-			prs = append(prs, pr)
+			hotfixPrs.prs = append(hotfixPrs.prs, &wrappedPullRequest{pr: pr})
 		} else {
 			fmt.Printf("Non-merged PR #%v can't be added to hotfix. PR has state: %v\n", *pr.Number, *pr.State)
 		}
 	}
-	return prs, nil
+	return &hotfixPrs, nil
 }
 
 // collectCommitsFromPRs fetches for each PR all its commits
-func (c *gitHubApiClient) collectCommitsFromPRs(prs []*github.PullRequest) (map[uint32]commitMatch, error) {
-	hashToCommitMatch := make(map[uint32]commitMatch)
-	for _, pr := range prs {
-		commits, _, err := c.client.PullRequests.ListCommits(c.ctx, c.repoOwner, c.repoName, *pr.Number, nil)
+func (c *gitHubApiClient) collectCommitsFromPRs(hotfixPrs *hotfixPrs) error {
+	allCommitMatches := make(map[uint32]*commitMatch)
+	for _, pr := range (*hotfixPrs).prs {
+		commits, _, err := c.client.PullRequests.ListCommits(c.ctx, c.repoOwner, c.repoName, *pr.pr.Number, nil)
 		if err != nil {
-			return nil, fmt.Errorf("can't retrieve commits for PR %d: %v", *pr.Number, err)
+			return fmt.Errorf("can't retrieve commits for PR %d: %v", *pr.pr.Number, err)
 		}
-		for _, c := range commits {
+
+		hashToCommitMatch := make(map[uint32]*commitMatch)
+		var lastCommmitMatch *commitMatch
+		for i, c := range commits {
 			wc := wrappedCommit{commit: c}
-			hashToCommitMatch[wc.hash()] = commitMatch{
+			commitMatch := commitMatch{
 				prCommit: wc,
-				pr:       pr,
 			}
+
+			// link commit matches
+			if lastCommmitMatch != nil {
+				commitMatch.previous = lastCommmitMatch
+				lastCommmitMatch.next = &commitMatch
+			}
+			hashToCommitMatch[wc.hash()] = &commitMatch
+			allCommitMatches[wc.hash()] = &commitMatch
+
+			if i == 0 {
+				pr.head = &commitMatch
+			}
+
+			lastCommmitMatch = &commitMatch
 		}
+		pr.tail = lastCommmitMatch
+		pr.commits = hashToCommitMatch
 	}
-	return hashToCommitMatch, nil
+	hotfixPrs.allCommits = allCommitMatches
+	return nil
 }
 
 // openPullRequest opens pull request
