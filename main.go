@@ -166,14 +166,13 @@ func main() {
 	}
 
 	for _, pr := range hotfixPrs.prs {
-		fmt.Sprintf("PR %d (merged at: %v)", pr.pr.Number, pr.pr.MergedAt)
-		fmt.Sprintf("PR %d (head commitSHA: %v)", pr.pr.Number, pr.head.prCommit.commit.GetSHA())
+		fmt.Printf("PR %d (merged at: %v)\n", *(pr.pr.Number), pr.pr.MergedAt)
+		fmt.Printf("PR %d (head commitSHA: %v)\n", *(pr.pr.Number), pr.head.prCommit.commit.GetSHA())
 
 		cm := pr.head
 		for cm != nil {
-			fmt.Printf("PR %d; mainCommitSHA: %v; prCommitSHA: %v\n", pr.pr.Number, cm.mainCommit.commit.GetSHA(), cm.prCommit.commit.GetSHA())
+			fmt.Printf("PR %d; mainCommitSHA: %v; prCommitSHA: %v\n", *(pr.pr.Number), cm.mainCommit.commit.GetSHA(), cm.prCommit.commit.GetSHA())
 			cm = cm.next
-			fmt.Sprintf("PR %d (next commit: %v)", pr.pr.Number, cm.next)
 		}
 	}
 
