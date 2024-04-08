@@ -165,8 +165,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	for _, commit := range hotfixPrs.allCommits {
-		fmt.Printf("mainCommitSHA: %v; prCommitSHA: %v\n", commit.mainCommit.commit.GetSHA(), commit.prCommit.commit.GetSHA())
+	for _, pr := range hotfixPrs.prs {
+		fmt.Sprintf("PR %d (merged at: %v)", pr.pr.Number, pr.pr.MergedAt)
+		fmt.Sprintf("PR %d (head commitSHA: %v)", pr.pr.Number, pr.head.prCommit.commit.GetSHA())
+
+		cm := pr.head
+		for cm != nil {
+			fmt.Printf("PR %d; mainCommitSHA: %v; prCommitSHA: %v\n", pr.pr.Number, cm.mainCommit.commit.GetSHA(), cm.prCommit.commit.GetSHA())
+			cm = cm.next
+			fmt.Sprintf("PR %d (next commit: %v)", pr.pr.Number, cm.next)
+		}
 	}
 
 	// checkout hotfix branch based on the release branch
