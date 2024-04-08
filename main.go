@@ -294,7 +294,8 @@ func checkoutHotfixBranch(releaseBranch, hotfixName string) error {
 		return err
 	}
 
-	err = executeGitCmd("checkout", "-b", hotfixName)
+	// force switching branch. if branch name already exists branch head will be reset
+	err = executeGitCmd("switch", "-f", hotfixName)
 	if err != nil {
 		return err
 	}
