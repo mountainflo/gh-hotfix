@@ -239,13 +239,13 @@ func pushBranch(branchName string) error {
 // cherryPickMatchingCommits cherry-picks matching commits from main branch to current branch
 func cherryPickMatchingCommits(hPrs *hotfixPrs) error {
 	for _, pr := range hPrs.prs {
-		fmt.Printf("cherry pick first PR %d (merged at: %v)", pr.pr.Number, pr.pr.MergedAt)
-		fmt.Printf("PR %d (head commitSHA: %v)", pr.pr.Number, pr.head.prCommit.commit.GetSHA())
+		fmt.Printf("cherry pick first PR %d (merged at: %v)", *(pr.pr.Number), pr.pr.MergedAt)
+		fmt.Printf("PR %d (head commitSHA: %v)", *(pr.pr.Number), pr.head.prCommit.commit.GetSHA())
 
 		cm := pr.head //TODO make sure to pick the oldest commit first and use previous/next
 		for cm != nil {
 			commitSHA := cm.mainCommit.commit.GetSHA()
-			fmt.Printf("PR %d (cherry pick commitSHA: %v)", pr.pr.Number, pr.head.prCommit.commit.GetSHA())
+			fmt.Printf("PR %d (cherry pick commitSHA: %v)", *(pr.pr.Number), commitSHA)
 			err := executeGitCmd("cherry-pick", commitSHA)
 			if err != nil {
 				return err
