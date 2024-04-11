@@ -291,10 +291,10 @@ func checkoutHotfixBranch(releaseBranch, hotfixName string) error {
 		return err
 	}
 
-	err = executeGitCmd("checkout", releaseBranch)
+	/*err = executeGitCmd("checkout", releaseBranch)
 	if err != nil {
 		return err
-	}
+	}*/
 
 	err = executeGitCmd("pull")
 	if err != nil {
@@ -312,9 +312,11 @@ func checkoutHotfixBranch(releaseBranch, hotfixName string) error {
 
 func executeGitCmd(args ...string) error {
 	gitPull := exec.Command("git", args...)
-	_, err := gitPull.Output()
+	out, err := gitPull.Output()
 	if err != nil {
 		return fmt.Errorf("error during 'git %v': %v", args, err)
+	} else {
+		fmt.Printf("%s\n%s\n", gitPull.String(), out)
 	}
 	return nil
 }
