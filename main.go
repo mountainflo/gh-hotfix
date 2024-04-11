@@ -291,10 +291,10 @@ func checkoutHotfixBranch(releaseBranch, hotfixName string) error {
 		return err
 	}
 
-	/*err = executeGitCmd("checkout", releaseBranch)
+	err = executeGitCmd("checkout", releaseBranch)
 	if err != nil {
 		return err
-	}*/
+	}
 
 	err = executeGitCmd("pull")
 	if err != nil {
