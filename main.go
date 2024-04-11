@@ -314,7 +314,7 @@ func executeGitCmd(args ...string) error {
 	gitPull := exec.Command("git", args...)
 	out, err := gitPull.Output()
 	if err != nil {
-		return fmt.Errorf("error during 'git %v': %v", args, err)
+		return fmt.Errorf("error during 'git %v': %v\n%s\n", args, err, out)
 	} else {
 		fmt.Printf("%s\n%s\n", gitPull.String(), out)
 	}
