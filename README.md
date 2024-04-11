@@ -1,6 +1,8 @@
 # gh hotfix
 
 GitHub CLI extension to cherry-pick commits from main-branch to a release branch.
+* All commits of the PRs will be cherry-picked from master to a new hotfix-branch
+* After successfully cherry-picking the commits a pull request will be opened to merge the hotfix-branch into the release-branch.
 
 ## Installation
 
@@ -11,6 +13,12 @@ gh extension install mountainflo/gh-hotfix
 Upgrade:
 ```
 gh extension upgrade mountainflo/gh-hotfix
+```
+
+## Example
+
+```
+gh hotfix -mb=main -rb=release/stable/2024-03 -hf=2024-03a -prs=5,6,7,8
 ```
 
 ## Usage

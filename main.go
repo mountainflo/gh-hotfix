@@ -32,26 +32,6 @@ type commitMatch struct {
 	next       *commitMatch
 }
 
-/*type commitMatches []commitMatch
-
-func (m commitMatches) Len() int {
-	return len(m)
-}
-
-func (m commitMatches) Less(i, j int) bool {
-
-	if m[i].pr.Number == m[j].pr.Number {
-		// compare individual commits
-
-	}
-
-	return *(m[i].pr.Number) < *(m[j].pr.Number)
-}
-
-func (m commitMatches) Swap(i, j int) {
-	m[i], m[j] = m[j], m[i]
-}*/
-
 type wrappedCommit struct {
 	commit *github.RepositoryCommit
 }
@@ -167,11 +147,11 @@ func main() {
 
 	for _, pr := range hotfixPrs.prs {
 		fmt.Printf("PR %d (merged at: %v)\n", *(pr.pr.Number), pr.pr.MergedAt)
-		fmt.Printf("PR %d (head commitSHA: %v)\n", *(pr.pr.Number), pr.head.prCommit.commit.GetSHA())
+		fmt.Printf("\thead commitSHA: %v\n", pr.head.prCommit.commit.GetSHA())
 
 		cm := pr.head
 		for cm != nil {
-			fmt.Printf("PR %d; mainCommitSHA: %v; prCommitSHA: %v\n", *(pr.pr.Number), cm.mainCommit.commit.GetSHA(), cm.prCommit.commit.GetSHA())
+			fmt.Printf("\t\tmainCommitSHA: %v; prCommitSHA: %v\n", cm.mainCommit.commit.GetSHA(), cm.prCommit.commit.GetSHA())
 			cm = cm.next
 		}
 	}
@@ -206,20 +186,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Successfully created PR: %s\n", pr.GetHTMLURL())
+	fmt.Printf("Successfully created PR: %s\n\n", pr.GetHTMLURL())
 }
 
 // sortMatchingCommits sorts commits after the order of the main branch
 func (hprs hotfixPrs) sortMatchingCommits() error {
-	// TODO sort commits by date and use the parent SHA to keep order if date is equal, e.g. in cases of force push
-	// sort matchingCommits by merged Date of the PRs
-	/*sort.Slice(matchingCommits, func(i, j int) bool {
-		iCreationDate := matchingCommits[i].mainCommit.commit.Commit.Committer.Date
-		jCreationDate := matchingCommits[j].mainCommit.commit.Commit.Committer.Date
-		return iCreationDate.Before(*jCreationDate)
-	})*/
-
-	// TODO sort by wrappedPullRequests by MergedDate
+	// sort by wrappedPullRequests by MergedDate
 	sort.Slice(hprs.prs, func(i, j int) bool {
 		return hprs.prs[i].pr.MergedAt.Before(*(hprs.prs[j].pr.MergedAt))
 	})
@@ -239,18 +211,16 @@ func pushBranch(branchName string) error {
 // cherryPickMatchingCommits cherry-picks matching commits from main branch to current branch
 func cherryPickMatchingCommits(hPrs *hotfixPrs) error {
 	for _, pr := range hPrs.prs {
-		fmt.Printf("cherry pick first PR %d (merged at: %v)\n", *(pr.pr.Number), pr.pr.MergedAt)
-		fmt.Printf("PR %d (head commitSHA: %v)\n", *(pr.pr.Number), pr.head.prCommit.commit.GetSHA())
-
-		cm := pr.head //TODO make sure to pick the oldest commit first and use previous/next
+		fmt.Printf("cherry pick PR %d (merged at: %v)\n", *(pr.pr.Number), pr.pr.MergedAt)
+		cm := pr.head // start with the oldest commit
 		for cm != nil {
 			commitSHA := cm.mainCommit.commit.GetSHA()
-			fmt.Printf("PR %d (cherry pick commitSHA: %v)\n", *(pr.pr.Number), commitSHA)
+			// fmt.Printf("PR %d (cherry pick commitSHA: %v)\n", *(pr.pr.Number), commitSHA)
 			err := executeGitCmd("cherry-pick", commitSHA)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("PR %d (next commit: %v)", *(pr.pr.Number), cm.next)
+			// fmt.Printf("PR %d (next commit: %v)\n", *(pr.pr.Number), cm.next)
 			cm = cm.next
 
 		}
@@ -274,7 +244,6 @@ func createPullRequestBody(hPrs *hotfixPrs) string {
 		"------------ | ------------- | ------------- \n"
 
 	for _, wrappedPr := range hPrs.prs {
-		// TODO use next/previous here to keep the order
 		cm := wrappedPr.head
 		for cm != nil {
 			body = body + wrappedPr.pr.GetHTMLURL() + " | " + cm.mainCommit.commit.GetHTMLURL() + " | " + cm.prCommit.commit.GetHTMLURL() + " \n"
@@ -343,12 +312,6 @@ func matchCommits(mainBranchCommits []*github.RepositoryCommit, allPrCommits map
 	}
 
 	return nil
-}
-
-func sortPRsByMergeDateAsc(prs []*github.PullRequest) {
-	sort.Slice(prs, func(i, j int) bool {
-		return prs[i].MergedAt.After(*(prs[j].MergedAt))
-	})
 }
 
 // getOldestPRCreationDate returns date of the PR which was created before all other PRs
