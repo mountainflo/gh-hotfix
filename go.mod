@@ -1,6 +1,6 @@
 module github.com/mountainflo/gh-hotfix
 
-go 1.22.2
+go 1.22
 
 require (
 	github.com/google/go-github/v37 v37.0.0
