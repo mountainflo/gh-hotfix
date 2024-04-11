@@ -250,8 +250,8 @@ func cherryPickMatchingCommits(hPrs *hotfixPrs) error {
 			if err != nil {
 				return err
 			}
+			fmt.Printf("PR %d (next commit: %v)", *(pr.pr.Number), cm.next)
 			cm = cm.next
-			fmt.Printf("PR %d (next commit: %v)", pr.pr.Number, cm.next)
 
 		}
 	}
